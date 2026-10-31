@@ -60,3 +60,6 @@ Thumbs.db
 # Vercel deployment metadata
 .vercel/
 **/vercel/
+
+# HTML intermediate submission files
+submission_source.html
