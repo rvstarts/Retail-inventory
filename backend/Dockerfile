@@ -26,9 +26,9 @@ RUN chown -R rims:rims /app
 # Expose standard Spring Boot port
 EXPOSE 8080
 
-# Environment variables
+# Environment variables (dynamic RAM scaling for cloud containers)
 ENV SPRING_PROFILES_ACTIVE=postgres \
-    JAVA_OPTS="-Xms512m -Xmx2048m -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError"
+    JAVA_OPTS="-XX:MaxRAMPercentage=75.0 -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError"
 
 # Container Healthcheck
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
@@ -38,4 +38,3 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
 USER rims:rims
 
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/rims-backend.jar"]
-
