@@ -1,16 +1,14 @@
 # Multi-Stage Dockerfile for RIMS Spring Boot 3.x Backend (Java 21)
-# Stage 1: Build & Package
-FROM eclipse-temurin:21-jdk-jammy AS builder
+# Stage 1: Build & Package with matched Maven 3.9 and Temurin JDK 21
+FROM maven:3.9.6-eclipse-temurin-21 AS builder
 WORKDIR /workspace
 
-# Cache Maven wrapper and dependencies
+# Copy Maven POM and source files
 COPY pom.xml .
 COPY src ./src
 
 # Build production jar without running test suite in container build
-RUN apt-get update && apt-get install -y maven \
-    && mvn clean package -DskipTests -Ppostgres \
-    && rm -rf /var/lib/apt/lists/*
+RUN mvn clean package -DskipTests
 
 # Stage 2: Minimal Production JRE Runtime
 FROM eclipse-temurin:21-jre-jammy
@@ -29,10 +27,6 @@ EXPOSE 8080
 # Environment variables (dynamic RAM scaling for cloud containers)
 ENV SPRING_PROFILES_ACTIVE=postgres \
     JAVA_OPTS="-XX:MaxRAMPercentage=75.0 -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError"
-
-# Container Healthcheck
-HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-  CMD curl -f http://localhost:8080/actuator/health || exit 1
 
 # Execute as unprivileged user
 USER rims:rims
