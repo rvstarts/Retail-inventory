@@ -1,0 +1,92 @@
+version: '3.8'
+
+services:
+  # ---------------------------------------------------------------------------
+  # 1. PostgreSQL Database Service
+  # ---------------------------------------------------------------------------
+  rims-db:
+    image: postgres:16-alpine
+    container_name: rims-postgres-db
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_NAME:-rims_db}
+      POSTGRES_USER: ${DB_USERNAME:-rims_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-rims_secure_pass}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - rims_pgdata:/var/lib/postgresql/data
+      - ./DATABASE_SCHEMA.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-rims_user} -d ${DB_NAME:-rims_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rims-net
+
+  # ---------------------------------------------------------------------------
+  # 2. Spring Boot 3.x Backend Service (Java 21)
+  # ---------------------------------------------------------------------------
+  rims-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: rims-spring-backend
+    restart: always
+    depends_on:
+      rims-db:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: postgres
+      SPRING_DATASOURCE_URL: jdbc:postgresql://rims-db:5432/${DB_NAME:-rims_db}
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-rims_user}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-rims_secure_pass}
+      JWT_SECRET: ${JWT_SECRET:-9a7f3e2b1c4d5e6f8a0b2c4d6e8f0a2b4c6d8e0f2a4b6c8d0e2f4a6b8c0d2e4f}
+      JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-86400000}
+      SERVER_PORT: 8080
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    networks:
+      - rims-net
+
+  # ---------------------------------------------------------------------------
+  # 3. React.js + Vite + Tailwind Frontend Service (Nginx)
+  # ---------------------------------------------------------------------------
+  rims-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: rims-web-frontend
+    restart: always
+    depends_on:
+      - rims-backend
+    ports:
+      - "3000:80"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    networks:
+      - rims-net
+
+# -----------------------------------------------------------------------------
+# Volumes & Networks
+# -----------------------------------------------------------------------------
+volumes:
+  rims_pgdata:
+    name: rims_postgres_data
+
+networks:
+  rims-net:
+    name: rims_network
+    driver: bridge
+

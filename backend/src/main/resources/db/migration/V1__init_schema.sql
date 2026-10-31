@@ -1,0 +1,347 @@
+-- V1__init_schema.sql - RIMS Initial Relational Schema
+-- Supports PostgreSQL and H2 (PostgreSQL compatibility mode)
+
+CREATE TABLE IF NOT EXISTS users (
+    id BIGSERIAL PRIMARY KEY,
+    username VARCHAR(50) NOT NULL UNIQUE,
+    email VARCHAR(100) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    first_name VARCHAR(50) NOT NULL,
+    last_name VARCHAR(50) NOT NULL,
+    phone_number VARCHAR(20),
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS roles (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(50) NOT NULL UNIQUE,
+    description VARCHAR(255)
+);
+
+CREATE TABLE IF NOT EXISTS permissions (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    module VARCHAR(50) NOT NULL,
+    description VARCHAR(255)
+);
+
+CREATE TABLE IF NOT EXISTS user_roles (
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role_id BIGINT NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+    PRIMARY KEY (user_id, role_id)
+);
+
+CREATE TABLE IF NOT EXISTS role_permissions (
+    role_id BIGINT NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+    permission_id BIGINT NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
+    PRIMARY KEY (role_id, permission_id)
+);
+
+CREATE TABLE IF NOT EXISTS categories (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    code VARCHAR(50) NOT NULL UNIQUE,
+    description TEXT,
+    parent_id BIGINT REFERENCES categories(id) ON DELETE SET NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS products (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(150) NOT NULL,
+    sku VARCHAR(50) NOT NULL UNIQUE,
+    barcode VARCHAR(100) UNIQUE,
+    description TEXT,
+    category_id BIGINT NOT NULL REFERENCES categories(id) ON DELETE RESTRICT,
+    brand VARCHAR(100),
+    purchase_price DECIMAL(12, 2) NOT NULL,
+    selling_price DECIMAL(12, 2) NOT NULL,
+    min_stock_level INT NOT NULL DEFAULT 10,
+    reorder_point INT NOT NULL DEFAULT 20,
+    image_url VARCHAR(500),
+    status VARCHAR(30) NOT NULL DEFAULT 'ACTIVE',
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS warehouses (
+    id BIGSERIAL PRIMARY KEY,
+    code VARCHAR(50) NOT NULL UNIQUE,
+    name VARCHAR(100) NOT NULL,
+    address_line TEXT NOT NULL,
+    city VARCHAR(100) NOT NULL,
+    state VARCHAR(100) NOT NULL,
+    postal_code VARCHAR(20) NOT NULL,
+    contact_phone VARCHAR(20),
+    contact_email VARCHAR(100),
+    capacity INT NOT NULL DEFAULT 100000,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS stores (
+    id BIGSERIAL PRIMARY KEY,
+    code VARCHAR(50) NOT NULL UNIQUE,
+    name VARCHAR(100) NOT NULL,
+    address_line TEXT NOT NULL,
+    city VARCHAR(100) NOT NULL,
+    state VARCHAR(100) NOT NULL,
+    postal_code VARCHAR(20) NOT NULL,
+    contact_phone VARCHAR(20),
+    contact_email VARCHAR(100),
+    assigned_warehouse_id BIGINT REFERENCES warehouses(id) ON DELETE SET NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS inventory (
+    id BIGSERIAL PRIMARY KEY,
+    product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
+    location_type VARCHAR(20) NOT NULL,
+    warehouse_id BIGINT REFERENCES warehouses(id) ON DELETE CASCADE,
+    store_id BIGINT REFERENCES stores(id) ON DELETE CASCADE,
+    quantity INT NOT NULL DEFAULT 0,
+    reserved_quantity INT NOT NULL DEFAULT 0,
+    reorder_point INT NOT NULL DEFAULT 20,
+    safety_stock INT NOT NULL DEFAULT 10,
+    last_audit_at TIMESTAMP WITH TIME ZONE,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_product_warehouse UNIQUE (product_id, warehouse_id),
+    CONSTRAINT uq_product_store UNIQUE (product_id, store_id)
+);
+
+CREATE TABLE IF NOT EXISTS stock_transactions (
+    id BIGSERIAL PRIMARY KEY,
+    product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
+    location_type VARCHAR(20) NOT NULL,
+    warehouse_id BIGINT REFERENCES warehouses(id) ON DELETE SET NULL,
+    store_id BIGINT REFERENCES stores(id) ON DELETE SET NULL,
+    transaction_type VARCHAR(30) NOT NULL,
+    quantity_change INT NOT NULL,
+    quantity_after INT NOT NULL,
+    reference_id VARCHAR(100),
+    notes TEXT,
+    created_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS stock_transfers (
+    id BIGSERIAL PRIMARY KEY,
+    transfer_number VARCHAR(50) NOT NULL UNIQUE,
+    source_type VARCHAR(20) NOT NULL,
+    source_warehouse_id BIGINT REFERENCES warehouses(id) ON DELETE SET NULL,
+    source_store_id BIGINT REFERENCES stores(id) ON DELETE SET NULL,
+    dest_type VARCHAR(20) NOT NULL,
+    dest_warehouse_id BIGINT REFERENCES warehouses(id) ON DELETE SET NULL,
+    dest_store_id BIGINT REFERENCES stores(id) ON DELETE SET NULL,
+    status VARCHAR(30) NOT NULL DEFAULT 'REQUESTED',
+    tracking_notes TEXT,
+    created_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    approved_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS stock_transfer_items (
+    id BIGSERIAL PRIMARY KEY,
+    transfer_id BIGINT NOT NULL REFERENCES stock_transfers(id) ON DELETE CASCADE,
+    product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
+    quantity INT NOT NULL,
+    received_quantity INT NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS suppliers (
+    id BIGSERIAL PRIMARY KEY,
+    code VARCHAR(50) NOT NULL UNIQUE,
+    name VARCHAR(150) NOT NULL,
+    contact_person VARCHAR(100),
+    email VARCHAR(100) NOT NULL,
+    phone VARCHAR(20),
+    address TEXT,
+    gstin VARCHAR(50),
+    payment_terms VARCHAR(100),
+    rating DECIMAL(3, 2) DEFAULT 4.50,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS purchase_orders (
+    id BIGSERIAL PRIMARY KEY,
+    po_number VARCHAR(50) NOT NULL UNIQUE,
+    supplier_id BIGINT NOT NULL REFERENCES suppliers(id) ON DELETE RESTRICT,
+    warehouse_id BIGINT NOT NULL REFERENCES warehouses(id) ON DELETE RESTRICT,
+    status VARCHAR(30) NOT NULL DEFAULT 'DRAFT',
+    total_amount DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+    expected_delivery_date DATE,
+    notes TEXT,
+    created_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    approved_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS purchase_order_items (
+    id BIGSERIAL PRIMARY KEY,
+    purchase_order_id BIGINT NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+    product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
+    ordered_quantity INT NOT NULL,
+    received_quantity INT NOT NULL DEFAULT 0,
+    unit_cost DECIMAL(12, 2) NOT NULL,
+    total_cost DECIMAL(12, 2) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS customers (
+    id BIGSERIAL PRIMARY KEY,
+    customer_code VARCHAR(50) NOT NULL UNIQUE,
+    name VARCHAR(150) NOT NULL,
+    email VARCHAR(100) NOT NULL,
+    phone VARCHAR(20),
+    shipping_address TEXT,
+    city VARCHAR(100),
+    state VARCHAR(100),
+    postal_code VARCHAR(20),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS customer_orders (
+    id BIGSERIAL PRIMARY KEY,
+    order_number VARCHAR(50) NOT NULL UNIQUE,
+    customer_id BIGINT NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
+    store_id BIGINT REFERENCES stores(id) ON DELETE SET NULL,
+    warehouse_id BIGINT REFERENCES warehouses(id) ON DELETE SET NULL,
+    status VARCHAR(30) NOT NULL DEFAULT 'PENDING',
+    total_amount DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+    shipping_tracking_number VARCHAR(100),
+    shipping_carrier VARCHAR(50),
+    notes TEXT,
+    created_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS order_items (
+    id BIGSERIAL PRIMARY KEY,
+    order_id BIGINT NOT NULL REFERENCES customer_orders(id) ON DELETE CASCADE,
+    product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
+    quantity INT NOT NULL,
+    unit_price DECIMAL(12, 2) NOT NULL,
+    total_price DECIMAL(12, 2) NOT NULL,
+    is_reserved BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+CREATE TABLE IF NOT EXISTS order_status_history (
+    id BIGSERIAL PRIMARY KEY,
+    order_id BIGINT NOT NULL REFERENCES customer_orders(id) ON DELETE CASCADE,
+    from_status VARCHAR(30),
+    to_status VARCHAR(30) NOT NULL,
+    comments TEXT,
+    changed_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS returns (
+    id BIGSERIAL PRIMARY KEY,
+    return_number VARCHAR(50) NOT NULL UNIQUE,
+    order_id BIGINT NOT NULL REFERENCES customer_orders(id) ON DELETE RESTRICT,
+    reason TEXT NOT NULL,
+    status VARCHAR(30) NOT NULL DEFAULT 'PENDING',
+    refund_amount DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+    restock_warehouse_id BIGINT REFERENCES warehouses(id) ON DELETE SET NULL,
+    restock_store_id BIGINT REFERENCES stores(id) ON DELETE SET NULL,
+    created_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS return_items (
+    id BIGSERIAL PRIMARY KEY,
+    return_id BIGINT NOT NULL REFERENCES returns(id) ON DELETE CASCADE,
+    product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
+    quantity INT NOT NULL,
+    condition VARCHAR(50) NOT NULL DEFAULT 'RESTOCKABLE',
+    is_restocked BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+CREATE TABLE IF NOT EXISTS barcode_records (
+    id BIGSERIAL PRIMARY KEY,
+    barcode VARCHAR(100) NOT NULL UNIQUE,
+    barcode_format VARCHAR(30) NOT NULL DEFAULT 'CODE_128',
+    product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    serial_number VARCHAR(100),
+    batch_number VARCHAR(100),
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS rfid_scan_logs (
+    id BIGSERIAL PRIMARY KEY,
+    epc_tag VARCHAR(100) NOT NULL,
+    reader_id VARCHAR(50) NOT NULL,
+    location_type VARCHAR(20) NOT NULL,
+    warehouse_id BIGINT REFERENCES warehouses(id) ON DELETE SET NULL,
+    store_id BIGINT REFERENCES stores(id) ON DELETE SET NULL,
+    product_id BIGINT REFERENCES products(id) ON DELETE SET NULL,
+    action_type VARCHAR(50) NOT NULL,
+    rssi_signal DECIMAL(5, 2),
+    scan_timestamp TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS notifications (
+    id BIGSERIAL PRIMARY KEY,
+    recipient_user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+    title VARCHAR(150) NOT NULL,
+    message TEXT NOT NULL,
+    type VARCHAR(50) NOT NULL,
+    is_read BOOLEAN NOT NULL DEFAULT FALSE,
+    reference_link VARCHAR(255),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    username VARCHAR(50),
+    action VARCHAR(50) NOT NULL,
+    entity_name VARCHAR(50) NOT NULL,
+    entity_id VARCHAR(50),
+    details TEXT,
+    ip_address VARCHAR(45),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS integration_configs (
+    id BIGSERIAL PRIMARY KEY,
+    system_name VARCHAR(50) NOT NULL UNIQUE,
+    system_type VARCHAR(50) NOT NULL,
+    api_endpoint VARCHAR(255) NOT NULL,
+    auth_type VARCHAR(30) NOT NULL DEFAULT 'BEARER_TOKEN',
+    api_key VARCHAR(255),
+    is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    sync_frequency_minutes INT NOT NULL DEFAULT 60,
+    last_sync_at TIMESTAMP WITH TIME ZONE,
+    status VARCHAR(30) NOT NULL DEFAULT 'HEALTHY',
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS integration_logs (
+    id BIGSERIAL PRIMARY KEY,
+    config_id BIGINT NOT NULL REFERENCES integration_configs(id) ON DELETE CASCADE,
+    direction VARCHAR(20) NOT NULL,
+    entity_type VARCHAR(50) NOT NULL,
+    payload TEXT,
+    response_code INT,
+    response_body TEXT,
+    status VARCHAR(30) NOT NULL,
+    retry_count INT NOT NULL DEFAULT 0,
+    error_message TEXT,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+

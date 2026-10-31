@@ -1,0 +1,4 @@
+#!/bin/sh
+# Maven Wrapper for Linux/macOS
+exec mvn "$@"
+
